@@ -1,3 +1,3 @@
 -- SQLite
-SELECT Id, UserName
+SELECT Id, UserName, PasswordHash, PasswordSalt
 FROM Users;
