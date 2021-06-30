@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using API.Helpers;
 using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using DatingApp.API.DT0s;
@@ -8,7 +10,8 @@ using DatingApp.API.Entities;
 using DatingApp.API.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
-namespace DatingApp.API.Data{
+namespace DatingApp.API.Data
+{
 
     public class UserRepository : IUserRepository
     {
@@ -29,11 +32,31 @@ namespace DatingApp.API.Data{
                 .SingleOrDefaultAsync();
         }
 
-        public async Task<IEnumerable<MemberDto>> GetMembersAsync()
+        public async Task<PagedList<MemberDto>> GetMembersAsync(UserParams userParams)
         {
-            return await context.Users
-                .ProjectTo<MemberDto>(mapper.ConfigurationProvider)
-                .ToListAsync();
+            var query = context.Users.AsQueryable();
+
+            query = query.Where(u => u.UserName != userParams.CurrentUserName);
+
+            query = query.Where(u => u.Gender == userParams.Gender);
+
+            var minDob = DateTime.Today.AddYears(-userParams.MaxAge - 1);
+            var maxDob = DateTime.Today.AddYears(-userParams.MinAge);
+
+            query = query.Where(u => u.DateOfBirth >= minDob && u.DateOfBirth <= maxDob);
+
+            query = userParams.OrderBy switch
+            {
+                "created" => query.OrderByDescending(u => u.CreatedAt),
+                _ => query.OrderByDescending(u => u.LastActive)
+
+            };
+
+            return await PagedList<MemberDto>.CreateAsync(query.ProjectTo<MemberDto>(mapper.ConfigurationProvider)
+                    .AsNoTracking(),
+                    userParams.PageNumber,
+                    userParams.PageSize);
+
         }
 
         public async Task<AppUser> GetUserByIdAsync(int id)
@@ -43,9 +66,14 @@ namespace DatingApp.API.Data{
 
         public async Task<AppUser> GetUserByUsernameAsync(string username)
         {
-           return await context.Users
-           .Include(p => p.Photos)
-           .SingleOrDefaultAsync(x => x.UserName == username);
+            return await context.Users
+            .Include(p => p.Photos)
+            .SingleOrDefaultAsync(x => x.UserName == username);
+        }
+
+        public async Task<string> GetUserGender(string username)
+        {
+            return await context.Users.Where(x => x.UserName == username).Select(x => x.Gender).FirstOrDefaultAsync();
         }
 
         public async Task<IEnumerable<AppUser>> GetUsersAsync()
@@ -55,10 +83,6 @@ namespace DatingApp.API.Data{
             .ToListAsync();
         }
 
-        public async Task<bool> SaveAllAsync()
-        {
-            return await context.SaveChangesAsync() > 0;
-        }
 
         public void Update(AppUser User)
         {
